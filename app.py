@@ -37,8 +37,8 @@ def prepare_video():
     
     ydl_opts = {
         'outtmpl': f'{SAVE_DIR}/{file_id}_%(title).50s.%(ext)s',
-        # This tells it to grab the best video and audio separately, and merge them into an mp4
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        # Fall back to 'best' format which avoids needing local ffmpeg merging on cloud containers
+        'format': 'best',
         'quiet': True,
         'noplaylist': True,
         'restrictfilenames': True,
@@ -46,9 +46,7 @@ def prepare_video():
         'cookiefile': 'cookies.txt',
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        },
-        # This locates the FFmpeg tool we added in requirements.txt so yt-dlp can use it to merge
-        'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe()
+        }
     }
 
     try:
