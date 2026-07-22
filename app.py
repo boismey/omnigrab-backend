@@ -36,16 +36,18 @@ def prepare_video():
     
     ydl_opts = {
         'outtmpl': f'{SAVE_DIR}/{file_id}_%(title).50s.%(ext)s',
-        # Fall back to the simplest supported format to avoid ffmpeg merge issues in cloud environments
-        'format': 'best',
+        'format': 'bestvideo+bestaudio/best',
         'quiet': True,
         'noplaylist': True,
         'restrictfilenames': True,
         'concurrent_fragment_downloads': 5,
         'cookiefile': 'cookies.txt',
+        'postprocessors': [],
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
+        },
+        'no_warnings': True,
+        'skip_download': False
     }
 
     try:
