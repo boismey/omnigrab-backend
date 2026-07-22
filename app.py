@@ -6,6 +6,7 @@ import uuid
 import threading
 import time
 from urllib.parse import quote
+import imageio_ffmpeg
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -14,16 +15,14 @@ SAVE_DIR = "temp_downloads"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 def delayed_delete(file_path):
-    """Waits 10 minutes before deleting the file to give download managers time to finish."""
+    """Waits 10 minutes before deleting the file."""
     time.sleep(600) 
     try:
         if os.path.exists(file_path):
             os.remove(file_path)
-            print(f"Cleaned up: {file_path}")
-    except Exception as e:
-        print(f"Could not delete file: {e}")
+    except Exception:
+        pass
 
-# STEP 1: Download to server and return a unique ID
 @app.route('/api/prepare', methods=['POST'])
 def prepare_video():
     data = request.json
@@ -32,42 +31,55 @@ def prepare_video():
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
+    # --- FIX 1: Normalize Shorts URLs ---
+    if 'youtube.com/shorts/' in url:
+        url = url.replace('youtube.com/shorts/', 'youtube.com/watch?v=')
+
     file_id = str(uuid.uuid4())
     
     ydl_opts = {
         'outtmpl': f'{SAVE_DIR}/{file_id}_%(title).50s.%(ext)s',
-        # Flexible format fallback so Shorts always pick a combined video+audio stream
-        'format': 'best[ext=mp4]/best',
+        # --- FIX 2: Use FFmpeg to merge high-quality streams ---
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'quiet': True,
         'noplaylist': True,
         'restrictfilenames': True,
         'concurrent_fragment_downloads': 5,
+        'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe(),
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
     }
+    
+    # Safely load cookies if the file exists
+    if os.path.exists('cookies.txt'):
+        ydl_opts['cookiefile'] = 'cookies.txt'
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+            # --- FIX 3: Fetch metadata first, THEN download ---
+            info = ydl.extract_info(url, download=False)
             
-            # --- FIX FOR SHORTS & PLAYLIST LINKS ---
-            # If YouTube wraps the response in an 'entries' list, extract the target video entry
+            # Isolate the exact video if it's trapped in a feed/playlist dict
             if info and 'entries' in info:
                 if info['entries']:
                     info = info['entries'][0]
                 else:
-                    return jsonify({"error": "No downloadable content found at this URL"}), 400
+                    return jsonify({"error": "No downloadable content found"}), 400
 
+            # Get the exact filename it will generate
             file_path = ydl.prepare_filename(info)
             filename = os.path.basename(file_path)
+            
+            # Now trigger the actual download using the clean webpage URL
+            download_target = info.get('webpage_url', url)
+            ydl.download([download_target])
             
         return jsonify({"status": "ready", "filename": filename})
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# STEP 2: Stream to the user's hard drive and delete later
 @app.route('/api/download/<path:filename>', methods=['GET'])
 def download_file(filename):
     file_path = os.path.join(SAVE_DIR, filename)
@@ -78,13 +90,8 @@ def download_file(filename):
     display_name = filename.split('_', 1)[1] if '_' in filename else filename
     encoded_name = quote(display_name)
     
-    # Start the 10-minute countdown to delete the file in the background
     threading.Thread(target=delayed_delete, args=(file_path,)).start()
-    
-    # send_file natively supports IDM's multi-part chunk downloading
     response = send_file(file_path, as_attachment=True)
-    
-    # Safely attach the emoji-supported filename
     response.headers['Content-Disposition'] = f"attachment; filename*=UTF-8''{encoded_name}"
     
     return response
