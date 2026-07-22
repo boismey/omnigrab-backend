@@ -31,16 +31,18 @@ def prepare_video():
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
-    # --- FIX 1: Normalize Shorts URLs ---
+    # Normalize Shorts URLs to standard watch URLs for easier extraction
     if 'youtube.com/shorts/' in url:
         url = url.replace('youtube.com/shorts/', 'youtube.com/watch?v=')
 
     file_id = str(uuid.uuid4())
     
     ydl_opts = {
-        'outtmpl': f'{SAVE_DIR}/{file_id}_%(title).50s.%(ext)s',
-        # --- FIX 2: Use FFmpeg to merge high-quality streams ---
+        # FIX 1: Hardcode the .mp4 extension so Flask always knows the exact filename
+        'outtmpl': f'{SAVE_DIR}/{file_id}_%(title).50s.mp4',
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        # FIX 2: Explicitly force FFmpeg to merge into an .mp4 wrapper
+        'merge_output_format': 'mp4',
         'quiet': True,
         'noplaylist': True,
         'restrictfilenames': True,
@@ -57,8 +59,8 @@ def prepare_video():
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # --- FIX 3: Fetch metadata first, THEN download ---
-            info = ydl.extract_info(url, download=False)
+            # FIX 3: Download in one single step to prevent filename mismatches
+            info = ydl.extract_info(url, download=True)
             
             # Isolate the exact video if it's trapped in a feed/playlist dict
             if info and 'entries' in info:
@@ -67,13 +69,13 @@ def prepare_video():
                 else:
                     return jsonify({"error": "No downloadable content found"}), 400
 
-            # Get the exact filename it will generate
             file_path = ydl.prepare_filename(info)
-            filename = os.path.basename(file_path)
             
-            # Now trigger the actual download using the clean webpage URL
-            download_target = info.get('webpage_url', url)
-            ydl.download([download_target])
+            # Double-check safety net to ensure Flask searches for an .mp4
+            if not file_path.endswith('.mp4'):
+                file_path = os.path.splitext(file_path)[0] + '.mp4'
+                
+            filename = os.path.basename(file_path)
             
         return jsonify({"status": "ready", "filename": filename})
         
