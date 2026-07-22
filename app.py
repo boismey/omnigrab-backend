@@ -23,47 +23,6 @@ def delayed_delete(file_path):
     except Exception as e:
         print(f"Could not delete file: {e}")
 
-
-def build_ydl_opts(file_id, strategy='default'):
-    opts = {
-        'outtmpl': f'{SAVE_DIR}/{file_id}_%(title).50s.%(ext)s',
-        'format': 'best',
-        'quiet': True,
-        'noplaylist': True,
-        'restrictfilenames': True,
-        'concurrent_fragment_downloads': 5,
-        'cookiefile': 'cookies.txt',
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        },
-        'no_warnings': True
-    }
-
-    if strategy == 'android':
-        opts['extractor_args'] = {'youtube': {'player_client': ['android']}}
-    elif strategy == 'web':
-        opts['extractor_args'] = {'youtube': {'player_client': ['web']}}
-    elif strategy == 'ios':
-        opts['extractor_args'] = {'youtube': {'player_client': ['ios']}}
-
-    return opts
-
-
-def download_with_fallback(url, file_id):
-    last_error = None
-    for strategy in ['default', 'android', 'web', 'ios']:
-        ydl_opts = build_ydl_opts(file_id, strategy)
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                file_path = ydl.prepare_filename(info)
-                return os.path.basename(file_path)
-        except Exception as e:
-            last_error = str(e)
-            print(f"yt-dlp strategy '{strategy}' failed for {url}: {last_error}")
-
-    raise RuntimeError(last_error or 'Download failed')
-
 # STEP 1: Download to server and return a unique ID
 @app.route('/api/prepare', methods=['POST'])
 def prepare_video():
@@ -74,15 +33,29 @@ def prepare_video():
         return jsonify({"error": "No URL provided"}), 400
 
     file_id = str(uuid.uuid4())
+    
+    ydl_opts = {
+        'outtmpl': f'{SAVE_DIR}/{file_id}_%(title).50s.%(ext)s',
+        'format': 'best',
+        'quiet': True,
+        'noplaylist': True,
+        'restrictfilenames': True,
+        'concurrent_fragment_downloads': 5,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+    }
 
     try:
-        filename = download_with_fallback(url, file_id)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            file_path = ydl.prepare_filename(info)
+            filename = os.path.basename(file_path)
+            
         return jsonify({"status": "ready", "filename": filename})
         
     except Exception as e:
-        error_message = str(e)
-        print(f"yt-dlp failed for {url}: {error_message}")
-        return jsonify({"error": error_message}), 500
+        return jsonify({"error": str(e)}), 500
 
 # STEP 2: Stream to the user's hard drive and delete later
 @app.route('/api/download/<path:filename>', methods=['GET'])
