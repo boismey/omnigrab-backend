@@ -36,7 +36,8 @@ def prepare_video():
     
     ydl_opts = {
         'outtmpl': f'{SAVE_DIR}/{file_id}_%(title).50s.%(ext)s',
-        'format': 'best',
+        # Flexible format fallback so Shorts always pick a combined video+audio stream
+        'format': 'best[ext=mp4]/best',
         'quiet': True,
         'noplaylist': True,
         'restrictfilenames': True,
@@ -49,6 +50,15 @@ def prepare_video():
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
+            
+            # --- FIX FOR SHORTS & PLAYLIST LINKS ---
+            # If YouTube wraps the response in an 'entries' list, extract the target video entry
+            if info and 'entries' in info:
+                if info['entries']:
+                    info = info['entries'][0]
+                else:
+                    return jsonify({"error": "No downloadable content found at this URL"}), 400
+
             file_path = ydl.prepare_filename(info)
             filename = os.path.basename(file_path)
             
