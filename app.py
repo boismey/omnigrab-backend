@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import yt_dlp
-import imageio_ffmpeg
 import os
 import uuid
 import threading
@@ -37,7 +36,7 @@ def prepare_video():
     
     ydl_opts = {
         'outtmpl': f'{SAVE_DIR}/{file_id}_%(title).50s.%(ext)s',
-        # Fall back to 'best' format which avoids needing local ffmpeg merging on cloud containers
+        # Fall back to the simplest supported format to avoid ffmpeg merge issues in cloud environments
         'format': 'best',
         'quiet': True,
         'noplaylist': True,
