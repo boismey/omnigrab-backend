@@ -37,8 +37,14 @@ def prepare_video():
     
     ydl_opts = {
         'outtmpl': f'{SAVE_DIR}/{file_id}_%(title).50s.mp4',
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        
+        # --- THE FIX ---
+        # Get the absolute best video and audio streams, regardless of their native format.
+        'format': 'bestvideo+bestaudio/best', 
+        
+        # FFmpeg will automatically step in and convert whatever was downloaded into an mp4.
         'merge_output_format': 'mp4',
+        
         'quiet': True,
         'noplaylist': True,
         'restrictfilenames': True,
