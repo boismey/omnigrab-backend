@@ -6,7 +6,6 @@ import uuid
 import threading
 import time
 from urllib.parse import quote
-import imageio_ffmpeg
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -31,38 +30,29 @@ def prepare_video():
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
-    # Normalize Shorts URLs to standard watch URLs for easier extraction
     if 'youtube.com/shorts/' in url:
         url = url.replace('youtube.com/shorts/', 'youtube.com/watch?v=')
 
     file_id = str(uuid.uuid4())
     
     ydl_opts = {
-        # FIX 1: Hardcode the .mp4 extension so Flask always knows the exact filename
         'outtmpl': f'{SAVE_DIR}/{file_id}_%(title).50s.mp4',
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        # FIX 2: Explicitly force FFmpeg to merge into an .mp4 wrapper
         'merge_output_format': 'mp4',
         'quiet': True,
         'noplaylist': True,
         'restrictfilenames': True,
         'concurrent_fragment_downloads': 5,
-        'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe(),
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
+        'extractor_args': {'youtube': {'client': ['android', 'web']}}
     }
     
-    # Safely load cookies if the file exists
     if os.path.exists('cookies.txt'):
         ydl_opts['cookiefile'] = 'cookies.txt'
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # FIX 3: Download in one single step to prevent filename mismatches
             info = ydl.extract_info(url, download=True)
             
-            # Isolate the exact video if it's trapped in a feed/playlist dict
             if info and 'entries' in info:
                 if info['entries']:
                     info = info['entries'][0]
@@ -71,7 +61,6 @@ def prepare_video():
 
             file_path = ydl.prepare_filename(info)
             
-            # Double-check safety net to ensure Flask searches for an .mp4
             if not file_path.endswith('.mp4'):
                 file_path = os.path.splitext(file_path)[0] + '.mp4'
                 
